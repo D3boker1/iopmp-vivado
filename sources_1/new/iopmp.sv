@@ -14,25 +14,34 @@ module iopmp #(
 
     // Implementation specific parameters
     parameter int unsigned NR_MD = 2,
-    parameter int unsigned NR_ENTRIES = 8,
+    parameter int unsigned NR_ENTRIES_PER_MD = 8,
     parameter int unsigned NR_MASTERS = 2,
 
-    //  AXI interface parameters
+    //  AXI Lite interface parameters
     parameter int unsigned AXI_ADDR_WIDTH = 32,
     parameter int unsigned AXI_DATA_WIDTH = 32,
     parameter int unsigned AXI_ID_WIDTH   = 10
     
 ) (
     //  clock and reset lines
-    input   logic                   clk_i,
-    input   logic                   rst_ni,
+    input   logic                       clk_i,
+    input   logic                       rst_ni,
+
+    // Signals from AXI 4 interface with DMA
+    input logic [PLEN-1:0]              addr_i,
+    input logic                         sid_i,
+    input iopmp_pkg::iopmp_access_t     access_type_i,
+    input logic [63:0]                  data_i,
+
+    // Signals to AXI 4 interface with Bus
+    output logic                        allow_transaction_o,
     
     // signals from AXI 4 Lite
     input   logic [AXI_ADDR_WIDTH-1:0]  address_cfg,
     input   logic                       en_cfg,
     input   logic                       we_cfg,
-    input   logic [63:0]                wdata_cfg,
-    output  logic [63:0]                rdata_cfg
+    input   logic [AXI_DATA_WIDTH-1:0]  wdata_cfg,
+    output  logic [AXI_DATA_WIDTH-1:0]  rdata_cfg
 
 );
     // It need to be riscv:XLEN in final implementation
@@ -40,11 +49,11 @@ module iopmp #(
 
     // Allow to select the:
     // Master among all the masters;
-    localparam AddrSIDSelWidth = (NR_MASTERS == 1) ? 1 : $clog2(NR_MASTERS);  
+    localparam AddrSIDSelWidth      = (NR_MASTERS == 1) ? 1 : $clog2(NR_MASTERS);  
     // Memory Domain among all the Memory Domain;
-    localparam AddrMDSelWidth = (NR_MD == 1) ? 1 : $clog2(NR_MD);  
+    localparam AddrMDSelWidth       = (NR_MD == 1) ? 1 : $clog2(NR_MD);  
     // Entry among all the Entry;
-    localparam AddrEntrySelWidth = ((NR_ENTRIES*NR_MD) == 1) ? 1 : $clog2((NR_ENTRIES * NR_MD));   
+    localparam AddrEntrySelWidth    = ((NR_ENTRIES_PER_MD*NR_MD) == 1) ? 1 : $clog2((NR_ENTRIES_PER_MD * NR_MD));   
 
     logic [15:0] register_address_cfg;
     assign register_address_cfg = address_cfg[15:0];
@@ -56,10 +65,11 @@ module iopmp #(
     iopmp_pkg::iopmp_mdlck_t                    iopmp_mdlck_d, iopmp_mdlck_q;           
     iopmp_pkg::iopmp_mdcfg_t [NR_MD-1:0]        iopmp_mdcfg_d, iopmp_mdcfg_q;           
     logic [15:0][IOPMP_LEN-1:0]                 iopmp_entry_addr_d, iopmp_entry_addr_q;
-    // the value 15 means: NR_ENTRIES * NR_MD
+    // the value 15 means: NR_ENTRIES_PER_MD * NR_MD
     iopmp_pkg::iopmp_entry_t   [15:0]           iopmp_entry_cfg_d, iopmp_entry_cfg_q; 
     iopmp_pkg::iopmp_srcmd_t [NR_MASTERS-1:0]   iopmp_srcmd_d, iopmp_srcmd_q;           
 
+    logic [(NR_ENTRIES_PER_MD*NR_MD)-1:0] match;
 
     // Hardwired Values
     assign iopmp_mdlck_d.L              = '1;
@@ -68,11 +78,79 @@ module iopmp #(
 
     always_comb begin
         for ( int unsigned i = 0; i < NR_MD; i = i + 1) begin
-            iopmp_mdcfg_d[i].T  = ((i + 1) * NR_ENTRIES);
+            iopmp_mdcfg_d[i].T  = ((i + 1) * NR_ENTRIES_PER_MD);
             iopmp_mdcfg_d[i].F  = '0;
             iopmp_mdcfg_d[i].L  = 1'b1;
         end
     end 
+
+    // -----------------------------
+    // IOPMP Logic
+    // -----------------------------
+    // Rule Checker
+   
+    for(genvar i = 0; i < NR_ENTRIES_PER_MD*NR_MD; i = i + 1) begin
+        logic [IOPMP_LEN-1:0] conf_addr_prev;
+
+        assign conf_addr_prev = (i == 0) ? '0 : iopmp_entry_addr_q[i-1];
+
+        pmp_entry #(
+            .PLEN    ( PLEN    ),
+            .PMP_LEN ( IOPMP_LEN )
+        ) i_pmp_entry(
+            .addr_i           ( addr_i                         ),
+            .conf_addr_i      ( iopmp_entry_addr_q[i]          ),
+            .conf_addr_prev_i ( conf_addr_prev                 ),
+            .conf_addr_mode_i ( iopmp_entry_cfg_q[i].addr_mode ),
+            .match_o          ( match[i]                       )
+        );
+    end
+
+    // MD discovery, Rule checker evaluation, Execute response.
+    always_comb begin
+        allow_transaction_o = 1'b0;
+        // Evaluate if IOPMP device is enbaled. Otherwise block every transaction.
+        if(iopmp_ctl_q.enable) begin   
+            if(NR_ENTRIES_PER_MD*NR_MD > 0) begin
+                for(integer i = 0; i < NR_MD; i++)begin
+                    // Evaluate if MD is enabled for the current SID.
+                    //if(iopmp_srcmd_q[sid_i][i])begin
+                        for(integer j = iopmp_mdcfg_q[i].T - NR_ENTRIES_PER_MD; j < iopmp_mdcfg_q[i].T; j++)begin
+                            //Evalute if there is any match
+                            if(match[j])begin
+                                if (((access_type_i & iopmp_entry_cfg_q[j].access_type) != access_type_i) | !iopmp_srcmd_q[sid_i][i]) begin
+                                    allow_transaction_o = 1'b0;
+                                    // Store the illegal transaction if this field is enabled
+                                    if(iopmp_entry_cfg_q[j].interrupt) begin
+                                        if (iopmp_ctl_q.rcall | (!iopmp_ctl_q.rcall & !iopmp_rcd_q.illcgt)) begin 
+                                            iopmp_rcd_d.illcgt = 1'b1;
+                                            iopmp_rcd_d.extra   = '0;
+                                            iopmp_rcd_d.length  = '0;
+                                            iopmp_rcd_d.read    = (access_type_i == ACCESS_READ)? 1'b1: 1'b0;
+                                            iopmp_rcd_d.sid     = {{12{1'b0}}, sid_i};
+                                            if(XLEN == 32) begin
+                                                iopmp_rcd_addr_d[31:0]  = addr_i;
+                                            end else begin
+                                                iopmp_rcd_addr_d        = addr_i;
+                                            end
+                                        end // if (iopmp_ctl_q[sid_i].rcall)
+                                    end //if(iopmp_entry_cfg_q[i].interrupt)
+                                    
+                                end else begin
+                                    allow_transaction_o = 1'b1;
+                                end
+                                break;
+                            end
+                        end
+                    //end
+                end
+            end else begin
+                allow_transaction_o = 1'b1;
+            end
+        end else begin
+            allow_transaction_o = 1'b0;
+        end
+    end
 
     // -----------------------------
     // Configuration Registers Update Logic
