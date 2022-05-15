@@ -1,7 +1,7 @@
 
 // Author: Francisco Marques, University of Minho
 // Date: 23/04/2022
-// Description: A RISC-V IOPMP implementation (based on IOPMPand IOMMU meetings. Don't implement any official specification) 
+// Description: A RISC-V IOPMP implementation (based on IOPMP and IOMMU meetings. Don't implement any official specification) 
 //
 
 import iopmp_pkg::*;
@@ -109,40 +109,40 @@ module iopmp #(
     // MD discovery, Rule checker evaluation, Execute response.
     always_comb begin
         allow_transaction_o = 1'b0;
+        iopmp_rcd_d         = iopmp_rcd_q;
+        iopmp_rcd_addr_d    = iopmp_rcd_addr_q;
         // Evaluate if IOPMP device is enbaled. Otherwise block every transaction.
         if(iopmp_ctl_q.enable) begin   
             if(NR_ENTRIES_PER_MD*NR_MD > 0) begin
                 for(integer i = 0; i < NR_MD; i++)begin
-                    // Evaluate if MD is enabled for the current SID.
-                    //if(iopmp_srcmd_q[sid_i][i])begin
-                        for(integer j = iopmp_mdcfg_q[i].T - NR_ENTRIES_PER_MD; j < iopmp_mdcfg_q[i].T; j++)begin
-                            //Evalute if there is any match
-                            if(match[j])begin
-                                if (((access_type_i & iopmp_entry_cfg_q[j].access_type) != access_type_i) | !iopmp_srcmd_q[sid_i][i]) begin
-                                    allow_transaction_o = 1'b0;
-                                    // Store the illegal transaction if this field is enabled
-                                    if(iopmp_entry_cfg_q[j].interrupt) begin
-                                        if (iopmp_ctl_q.rcall | (!iopmp_ctl_q.rcall & !iopmp_rcd_q.illcgt)) begin 
-                                            iopmp_rcd_d.illcgt = 1'b1;
-                                            iopmp_rcd_d.extra   = '0;
-                                            iopmp_rcd_d.length  = '0;
-                                            iopmp_rcd_d.read    = (access_type_i == ACCESS_READ)? 1'b1: 1'b0;
-                                            iopmp_rcd_d.sid     = {{12{1'b0}}, sid_i};
-                                            if(XLEN == 32) begin
-                                                iopmp_rcd_addr_d[31:0]  = addr_i;
-                                            end else begin
-                                                iopmp_rcd_addr_d        = addr_i;
-                                            end
-                                        end // if (iopmp_ctl_q[sid_i].rcall)
-                                    end //if(iopmp_entry_cfg_q[i].interrupt)
-                                    
-                                end else begin
-                                    allow_transaction_o = 1'b1;
-                                end
-                                break;
+                    for(integer j = iopmp_mdcfg_q[i].T - NR_ENTRIES_PER_MD; j < iopmp_mdcfg_q[i].T; j++)begin
+                        //Evalute if there is any match
+                        if(match[j])begin
+                            // Evaluate if MD is enabled for the current SID. And the access type
+                            if (((access_type_i & iopmp_entry_cfg_q[j].access_type) != access_type_i) | !iopmp_srcmd_q[sid_i][i]) begin
+                                allow_transaction_o = 1'b0;
+                                // Store the illegal transaction if this field is enabled
+                                if(iopmp_entry_cfg_q[j].interrupt) begin
+                                    if (iopmp_ctl_q.rcall | (!iopmp_ctl_q.rcall & !iopmp_rcd_q.illcgt)) begin 
+                                        iopmp_rcd_d.illcgt = 1'b1;
+                                        iopmp_rcd_d.extra   = '0;
+                                        iopmp_rcd_d.length  = '0;
+                                        iopmp_rcd_d.read    = (access_type_i == ACCESS_READ)? 1'b1: 1'b0;
+                                        iopmp_rcd_d.sid     = {{12{1'b0}}, sid_i};
+                                        if(XLEN == 32) begin
+                                            iopmp_rcd_addr_d[31:0]  = addr_i;
+                                        end else begin
+                                            iopmp_rcd_addr_d        = addr_i;
+                                        end
+                                    end // if (iopmp_ctl_q[sid_i].rcall)
+                                end //if(iopmp_entry_cfg_q[i].interrupt)
+                                
+                            end else begin
+                                allow_transaction_o = 1'b1;
                             end
+                            break;
                         end
-                    //end
+                    end
                 end
             end else begin
                 allow_transaction_o = 1'b1;

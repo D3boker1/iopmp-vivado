@@ -115,12 +115,6 @@ module iopmpLogic_tb();
         we          = 1;
         wdata       = 32'hC000_0001;    //  L = 1, RCALL = 1, EN = 1
         #(10);
-        // we = 0;
-        // #(1)
-        // if((rdata == 32'hC000_0001) ) begin
-        //     $display("[success]");
-        // end
-        // #(10);
 
         // 2. Configure iopmp_srcmd[0] to give access to MD[0]
         reg_addr    = IOPMP_BASE + iopmp_pkg::IOPMP_SRCMD_OFF;
@@ -128,11 +122,11 @@ module iopmpLogic_tb();
         we          = 1;
         wdata       = 64'h8000_0000_0000_0001;    //  L = 1, MD[0] = 1
         #(10);
-        // 2b. Configure iopmp_srcmd[1] but do not to give access to MD[0]
+        // 2b. Configure iopmp_srcmd[1] but do not to give access to MD[1]
         reg_addr    = IOPMP_BASE + iopmp_pkg::IOPMP_SRCMD_OFF + 8;
         en          = 1;
         we          = 1;
-        wdata       = 64'h8000_0000_0000_0000;    //  L = 1, MD[0] = 0
+        wdata       = 64'h8000_0000_0000_0002;    //  L = 1, MD[1] = 1, MD[0] = 0
         #(10);
 
         // 3. Configure iopmp_mdmsk to lock 
@@ -174,6 +168,17 @@ module iopmpLogic_tb();
         en          = 1;
         we          = 1;
         wdata       = 8'b1000_1110; // |L|R[6:5]|A[4:3]|I|W|R| A = 01 = TOR
+        #(10);
+        // 4a. Configure entry 8 
+        reg_addr    = IOPMP_BASE + iopmp_pkg::IOPMP_ENTRY_ADDR_OFF + 8*8;
+        en          = 1;
+        we          = 1;
+        wdata       = 64'h0000_0000_0000_4000;  // O que ele vai ler é na verdade 0x4000 << 2 = 0x10000
+        #(10);
+        reg_addr    = IOPMP_BASE + iopmp_pkg::IOPMP_ENTRY_CFG_OFF + 1*8;
+        en          = 1;
+        we          = 1;
+        wdata       = 8'b1001_1101; // |L|R[6:5]|A[4:3]|I|W|R| A = 11 = NAPOT
         #(10);
 
 
@@ -248,6 +253,55 @@ module iopmpLogic_tb();
         addr        = 64'h0000_0000_0000_9400;
         sid         = 0;
         access_type = iopmp_pkg::ACCESS_WRITE;
+        data        = '0;
+        #(10);
+        if(allow_transaction) begin
+            $display("[Success] Memory position: %x, Access type: %x, SID: %x", addr, access_type, sid);
+        end else begin
+            $display("[Failed] Failed to access memory position: %x, Access type: %x, SID: %x", addr, access_type, sid);
+        end
+        #(10);
+
+        // 6. Try to access mem position 0x9400 for a read. It should NOT be possible.
+        en = 0; //disable register configuration  
+        addr        = 64'h0000_0000_0000_9400;
+        sid         = 0;
+        access_type = iopmp_pkg::ACCESS_READ;
+        data        = '0;
+        #(10);
+        if(allow_transaction) begin
+            $display("[Failed] Memory position: %x, Access type: %x, SID: %x", addr, access_type, sid);
+        end else begin
+            $display("[Success] Failed to access memory position: %x, Access type: %x, SID: %x", addr, access_type, sid);
+        end
+        #(10);
+        reg_addr    = IOPMP_BASE + iopmp_pkg::IOPMP_RCD_OFF;
+        en          = 1;
+        we          = 0;
+        #(1)
+        if(rdata[31])begin // this means that an illegal transaction was caught
+            $display("iopmp_rcd:");
+            $display("---------------------------------------------------");
+            $display("|ILLCGT: %x | EXTRA: %x | LEN: %x | R: %x | SID: %x|", rdata[31], rdata[30:28], rdata[27:15], rdata[14], rdata[13:0]);
+            $display("---------------------------------------------------");
+        end
+        #(10);
+        #(10);
+        reg_addr    = IOPMP_BASE + iopmp_pkg::IOPMP_RCD_ADDR_OFF;
+        en          = 1;
+        we          = 0;
+        #(1)
+        $display("iopmp_rcd_addr:");
+        $display("---------------------------------------------------");
+        $display("|ILLCGT:%x                                ", rdata);
+        $display("---------------------------------------------------");
+        #(10);
+
+        // 5. Try to access mem position 0x10007 for a read. It should be possible.
+        en = 0; //disable register configuration  
+        addr        = 64'h0000_0000_0000_10007;
+        sid         = 1;
+        access_type = iopmp_pkg::ACCESS_READ;
         data        = '0;
         #(10);
         if(allow_transaction) begin
