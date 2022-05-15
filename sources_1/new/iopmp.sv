@@ -61,8 +61,7 @@ module iopmp #(
     iopmp_pkg::iopmp_ctl_t                      iopmp_ctl_d, iopmp_ctl_q;               
     iopmp_pkg::iopmp_rcd_t                      iopmp_rcd_d, iopmp_rcd_q;               
     logic [63:0]                                iopmp_rcd_addr_d, iopmp_rcd_addr_q;     
-    iopmp_pkg::iopmp_mdmsk_t                    iopmp_mdmask_d, iopmp_mdmask_q;         
-    iopmp_pkg::iopmp_mdlck_t                    iopmp_mdlck_d, iopmp_mdlck_q;           
+    iopmp_pkg::iopmp_mdmsk_t                    iopmp_mdmask_d, iopmp_mdmask_q;            
     iopmp_pkg::iopmp_mdcfg_t [NR_MD-1:0]        iopmp_mdcfg_d, iopmp_mdcfg_q;           
     logic [15:0][IOPMP_LEN-1:0]                 iopmp_entry_addr_d, iopmp_entry_addr_q;
     // the value 15 means: NR_ENTRIES_PER_MD * NR_MD
@@ -73,9 +72,7 @@ module iopmp #(
     logic [(NR_ENTRIES_PER_MD*NR_MD)-1:0] match;
 
     // Hardwired Values
-    assign iopmp_mdlck_d.L              = '1;
-    assign iopmp_mdlck_d.reserved       = 15'b0;
-    assign iopmp_mdlck_d.F              = 16'b1;
+    localparam IOPMP_MDLCK = 32'h8000_FFFF;
 
     always_comb begin
         for ( int unsigned i = 0; i < NR_MD; i = i + 1) begin
@@ -160,7 +157,6 @@ module iopmp #(
     always_comb begin
         iopmp_ctl_d         = iopmp_ctl_q;
         iopmp_mdmask_d      = iopmp_mdmask_q;
-        // iopmp_mdcfg_d       = iopmp_mdcfg_q;
         iopmp_entry_addr_d  = iopmp_entry_addr_q;
         iopmp_entry_cfg_d   = iopmp_entry_cfg_q;
         iopmp_srcmd_d       = iopmp_srcmd_q;
@@ -262,7 +258,7 @@ module iopmp #(
                 end
 
                 IOPMP_MDLCK_OFF: begin
-                    rdata_cfg[31:0] = iopmp_mdlck_q;
+                    rdata_cfg[31:0] = IOPMP_MDLCK;//iopmp_mdlck_q;
                 end
 
                 [IOPMP_MDCFG_OFF:IOPMP_ENTRY_ADDR_OFF - 4]: begin
@@ -306,8 +302,6 @@ module iopmp #(
             iopmp_rcd_q         <= '0;
             iopmp_rcd_addr_q    <= '0;
             iopmp_mdmask_q      <= '0;
-            // iopmp_mdlck_q       <= '0;
-            // iopmp_mdcfg_q       <= 'b0;
             iopmp_entry_addr_q  <= 'b0;
             iopmp_entry_cfg_q   <= 'b0;
             iopmp_srcmd_q       <= 'b0;
@@ -318,7 +312,6 @@ module iopmp #(
             iopmp_rcd_q         <= iopmp_rcd_d & (!clear_illcgt_d << 31);
             iopmp_rcd_addr_q    <= iopmp_rcd_addr_d;
             iopmp_mdmask_q      <= iopmp_mdmask_d;
-            iopmp_mdlck_q       <= iopmp_mdlck_d;
             iopmp_mdcfg_q       <= iopmp_mdcfg_d;
             iopmp_entry_addr_q  <= iopmp_entry_addr_d;
             iopmp_entry_cfg_q   <= iopmp_entry_cfg_d;
