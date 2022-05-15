@@ -69,6 +69,7 @@ module iopmp #(
     iopmp_pkg::iopmp_entry_t   [15:0]           iopmp_entry_cfg_d, iopmp_entry_cfg_q; 
     iopmp_pkg::iopmp_srcmd_t [NR_MASTERS-1:0]   iopmp_srcmd_d, iopmp_srcmd_q;           
 
+    logic                                       clear_illcgt_d, clear_illcgt_q;
     logic [(NR_ENTRIES_PER_MD*NR_MD)-1:0] match;
 
     // Hardwired Values
@@ -163,13 +164,20 @@ module iopmp #(
         iopmp_entry_addr_d  = iopmp_entry_addr_q;
         iopmp_entry_cfg_d   = iopmp_entry_cfg_q;
         iopmp_srcmd_d       = iopmp_srcmd_q;
-
+        clear_illcgt_d      = 1'b0;
         // written from APB bus - gets priority
         if (en_cfg && we_cfg) begin
             case (register_address_cfg) inside
                 IOPMP_CTL_OFF: begin
                     if(iopmp_ctl_q.L == 0) begin
                         iopmp_ctl_d = {wdata_cfg[31:30], 29'b0, wdata_cfg[0]};
+                    end
+                end
+
+                IOPMP_RCD_OFF: begin
+                    // Write 1 to clear (W1C)
+                    if(wdata_cfg[0] == 1) begin
+                        clear_illcgt_d = 1'b1;
                     end
                 end            
 
@@ -303,10 +311,11 @@ module iopmp #(
             iopmp_entry_addr_q  <= 'b0;
             iopmp_entry_cfg_q   <= 'b0;
             iopmp_srcmd_q       <= 'b0;
+            clear_illcgt_q      <= 0;
 
         end else begin
             iopmp_ctl_q         <= iopmp_ctl_d;
-            iopmp_rcd_q         <= iopmp_rcd_d;
+            iopmp_rcd_q         <= iopmp_rcd_d & (!clear_illcgt_d << 31);
             iopmp_rcd_addr_q    <= iopmp_rcd_addr_d;
             iopmp_mdmask_q      <= iopmp_mdmask_d;
             iopmp_mdlck_q       <= iopmp_mdlck_d;
@@ -314,7 +323,7 @@ module iopmp #(
             iopmp_entry_addr_q  <= iopmp_entry_addr_d;
             iopmp_entry_cfg_q   <= iopmp_entry_cfg_d;
             iopmp_srcmd_q       <= iopmp_srcmd_d;
-
+            clear_illcgt_q      <= clear_illcgt_d;
         end
     end
 endmodule

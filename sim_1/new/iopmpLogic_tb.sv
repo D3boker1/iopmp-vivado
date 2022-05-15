@@ -247,6 +247,31 @@ module iopmpLogic_tb();
             $display("---------------------------------------------------");
         end
         #(10);
+        // Clean the ILLCGT bit (that is, clear the IQR)
+        reg_addr    = IOPMP_BASE + iopmp_pkg::IOPMP_RCD_OFF;
+        en          = 1;
+        we          = 1;
+        wdata       = 32'h0000_0001;    // W1C IQR flag
+        #(10);
+        // Just to confirm taht ILLCGT field was cleared
+        reg_addr    = IOPMP_BASE + iopmp_pkg::IOPMP_RCD_OFF;
+        en          = 1;
+        we          = 0;
+        #(1)
+        if(!rdata[31])begin // this means that an illegal transaction was caught
+            $display("[Success] There are no illegal transactions to read at the moment");
+        end
+        #(10);
+        // Read the illegal transaction stored address
+        reg_addr    = IOPMP_BASE + iopmp_pkg::IOPMP_RCD_ADDR_OFF;
+        en          = 1;
+        we          = 0;
+        #(1)
+        $display("iopmp_rcd_addr:");
+        $display("---------------------------------------------------");
+        $display("|ILLCGT:%x                                ", rdata);
+        $display("---------------------------------------------------");
+        #(10);
 
         // 6. Try to access mem position 0x9400 for a write. It should be possible.
         en = 0; //disable register configuration  
@@ -286,7 +311,22 @@ module iopmpLogic_tb();
             $display("---------------------------------------------------");
         end
         #(10);
+        // Clean the ILLCGT bit (that is, clear the IQR)
+        reg_addr    = IOPMP_BASE + iopmp_pkg::IOPMP_RCD_OFF;
+        en          = 1;
+        we          = 1;
+        wdata       = 32'h0000_0001;    // W1C IQR flag
         #(10);
+        // Just to confirm taht ILLCGT field was cleared
+        reg_addr    = IOPMP_BASE + iopmp_pkg::IOPMP_RCD_OFF;
+        en          = 1;
+        we          = 0;
+        #(1)
+        if(!rdata[31])begin // this means that an illegal transaction was caught
+            $display("[Success] There are no illegal transactions to read at the moment");
+        end
+        #(10);
+        // Read the illegal transaction stored address
         reg_addr    = IOPMP_BASE + iopmp_pkg::IOPMP_RCD_ADDR_OFF;
         en          = 1;
         we          = 0;
